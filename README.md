@@ -13,8 +13,8 @@ Small CLI project that lists departures for selected tram lines from selected st
 ## 1) Install dependencies
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
+python3 -m venv golemio_venv
+source golemio_venv/bin/activate
 pip install -r requirements.txt
 ```
 
@@ -60,3 +60,4 @@ To get vichicle positions:
 ```
 https://api.golemio.cz/v2/vehiclepositions/gtfsrt/vehicle_positions.pb
 ```
+
