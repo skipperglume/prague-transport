@@ -3,11 +3,16 @@ import argparse
 import json
 import os
 import sys
-import pickle
 from pathlib import Path
 from typing import Any
 
 import requests
+from cache_utils import (
+    get_all_routes_cache,
+    get_all_stops_cache,
+    update_all_routes_cache,
+    update_all_stops_cache,
+)
 
 try:
     import matplotlib.pyplot as plt
@@ -137,35 +142,26 @@ def fetch_all_routes(api_key: str) -> dict[str, Any]:
     return response.json()
 
 
-def update_all_stops_cache(api_key: str, cache_path: Path='all_stops_cache.pkl') -> None:
-    all_stops = fetch_all_stops(api_key)
-    with open(cache_path, 'wb') as f:
-        pickle.dump(all_stops, f)
+def fetch_shape(api_key: str, shape_id: str) -> dict[str, Any]:
+    if not str(shape_id).strip():
+        raise ValueError("shape_id must be provided")
+
+    url = f"{API_BASE_URL}{SHAPES.format(id=shape_id)}"
+    headers = {
+        "X-Access-Token": api_key,
+        "Accept": "application/json",
+    }
+    response = requests.get(url, headers=headers, timeout=20)
+    if response.status_code == 401:
+        raise RuntimeError("Unauthorized: API key is missing or invalid")
+    if response.status_code == 404:
+        raise RuntimeError(f"Shape not found for id: {shape_id}")
+    if response.status_code >= 400:
+        raise RuntimeError(f"API error {response.status_code}: {response.text}")
+    return response.json()
 
 
-def get_all_stops_cache(cache_path: Path='all_stops_cache.pkl') -> dict[str, Any] | None:
-    if not os.path.exists(cache_path):
-        raise RuntimeError(f"Cache file {cache_path} does not exist. Run update_all_stops_cache() first.")
-    with open(cache_path, 'rb') as f:
-        return pickle.load(f)
-
-
-def update_all_routes_cache(api_key: str, cache_path: Path='all_routes_cache.pkl') -> None:
-    all_routes = fetch_all_routes(api_key)
-    with open(cache_path, 'wb') as f:
-        pickle.dump(all_routes, f)
-
-
-def get_all_routes_cache(cache_path: Path='all_routes_cache.pkl') -> dict[str, Any] | None:
-    if not os.path.exists(cache_path):
-        raise RuntimeError(f"Cache file {cache_path} does not exist. Run update_all_routes_cache() first.")
-    with open(cache_path, 'rb') as f:
-        return pickle.load(f)
-
-
-def plot_stops_coordinates(all_stops: dict[str, Any] | list[dict[str, Any]]) -> None:
-    
-
+def _extract_stop_points(all_stops: dict[str, Any] | list[dict[str, Any]]) -> list[tuple[float, float]]:
     points: list[tuple[float, float]] = []
 
     def add_point(lon_raw: Any, lat_raw: Any) -> None:
@@ -177,7 +173,6 @@ def plot_stops_coordinates(all_stops: dict[str, Any] | list[dict[str, Any]]) -> 
         points.append((lon, lat))
 
     if isinstance(all_stops, dict):
-        # GeoJSON-like shape from GTFS endpoints.
         features = all_stops.get("features")
         if isinstance(features, list):
             for feature in features:
@@ -188,7 +183,6 @@ def plot_stops_coordinates(all_stops: dict[str, Any] | list[dict[str, Any]]) -> 
                 if isinstance(coordinates, (list, tuple)) and len(coordinates) >= 2:
                     add_point(coordinates[0], coordinates[1])
 
-        # Flat list payload variants.
         for key in ("stops", "data"):
             stop_list = all_stops.get(key)
             if isinstance(stop_list, list):
@@ -205,21 +199,172 @@ def plot_stops_coordinates(all_stops: dict[str, Any] | list[dict[str, Any]]) -> 
             add_point(stop.get("lon"), stop.get("lat"))
             add_point(stop.get("longitude"), stop.get("latitude"))
 
-    unique_points = list(dict.fromkeys(points))
-    if not unique_points:
+    return list(dict.fromkeys(points))
+
+
+def _extract_route_lines(routes: dict[str, Any] | list[dict[str, Any]]) -> list[list[tuple[float, float]]]:
+    lines: list[list[tuple[float, float]]] = []
+
+    def as_point(value: Any) -> tuple[float, float] | None:
+        if not isinstance(value, (list, tuple)) or len(value) < 2:
+            return None
+        try:
+            lon = float(value[0])
+            lat = float(value[1])
+        except (TypeError, ValueError):
+            return None
+        return (lon, lat)
+
+    def add_line(coords: Any) -> None:
+        if not isinstance(coords, list):
+            return
+        line: list[tuple[float, float]] = []
+        for candidate in coords:
+            point = as_point(candidate)
+            if point is not None:
+                line.append(point)
+        if len(line) >= 2:
+            lines.append(line)
+
+    def process_geometry(geometry: Any) -> None:
+        if not isinstance(geometry, dict):
+            return
+        geometry_type = str(geometry.get("type", ""))
+        coords = geometry.get("coordinates")
+        if geometry_type == "LineString":
+            add_line(coords)
+        elif geometry_type == "MultiLineString" and isinstance(coords, list):
+            for segment in coords:
+                add_line(segment)
+
+    if isinstance(routes, dict):
+        features = routes.get("features")
+        if isinstance(features, list):
+            for feature in features:
+                if not isinstance(feature, dict):
+                    continue
+                process_geometry(feature.get("geometry"))
+
+        for key in ("routes", "data"):
+            route_list = routes.get(key)
+            if isinstance(route_list, list):
+                for route in route_list:
+                    if not isinstance(route, dict):
+                        continue
+                    process_geometry(route.get("geometry"))
+
+    if isinstance(routes, list):
+        for route in routes:
+            if not isinstance(route, dict):
+                continue
+            process_geometry(route.get("geometry"))
+
+    return lines
+
+
+def plot_stops_on_figure(
+    figure: Any,
+    all_stops: dict[str, Any] | list[dict[str, Any]],
+    *,
+    point_size: float = 4,
+    alpha: float = 0.7,
+    color: str = "tab:blue",
+    title: str = "Golemio Stops Coordinates",
+) -> Any:
+    points = _extract_stop_points(all_stops)
+    if not points:
         raise RuntimeError("No stop coordinates found in all_stops payload")
 
-    longitudes = [p[0] for p in unique_points]
-    latitudes = [p[1] for p in unique_points]
+    ax = figure.gca()
+    longitudes = [p[0] for p in points]
+    latitudes = [p[1] for p in points]
+    ax.scatter(longitudes, latitudes, s=point_size, alpha=alpha, color=color, label="Stops")
+    ax.set_xlabel("Longitude")
+    ax.set_ylabel("Latitude")
+    ax.set_title(title)
+    ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.6)
+    return ax
 
-    plt.figure(figsize=(10, 8))
-    plt.scatter(longitudes, latitudes, s=4, alpha=0.7)
-    plt.title("Golemio Stops Coordinates")
-    plt.xlabel("Longitude")
-    plt.ylabel("Latitude")
-    plt.grid(True, linestyle="--", linewidth=0.5, alpha=0.6)
+
+def plot_routes_on_figure(
+    figure: Any,
+    routes: dict[str, Any] | list[dict[str, Any]],
+    *,
+    line_width: float = 0.9,
+    alpha: float = 0.6,
+    color: str = "tab:red",
+) -> Any:
+    lines = _extract_route_lines(routes)
+    if not lines:
+        raise RuntimeError("No route geometries found in routes payload")
+
+    ax = figure.gca()
+    for line in lines:
+        xs = [p[0] for p in line]
+        ys = [p[1] for p in line]
+        ax.plot(xs, ys, linewidth=line_width, alpha=alpha, color=color)
+
+    ax.set_xlabel("Longitude")
+    ax.set_ylabel("Latitude")
+    ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.6)
+    return ax
+
+
+def plot_stops_coordinates(all_stops: dict[str, Any] | list[dict[str, Any]], title:str, out_dir:str='images' ) -> None:
+    fig = plt.figure(figsize=(10, 8))
+    ax = plot_stops_on_figure(fig, all_stops, title=title)
+    ax.set_title(title)
     plt.tight_layout()
-    plt.savefig("stops_coordinates.png", dpi=300)
+    output_path = os.path.join(out_dir, f"{title.lower().replace(' ', '_')}_coordinates.png")
+    plt.savefig(output_path, dpi=300)
+
+
+def plot_routes_coordinates(routes: dict[str, Any] | list[dict[str, Any]]) -> None:
+    fig = plt.figure(figsize=(10, 8))
+    ax = plot_routes_on_figure(fig, routes)
+    ax.set_title("Golemio Routes")
+    plt.tight_layout()
+    plt.savefig("images/routes_coordinates.png", dpi=300)
+
+
+def group_stops_by_zone_id(
+    all_stops: dict[str, Any] | list[dict[str, Any]],
+) -> dict[str | None, list[dict[str, Any]]]:
+    grouped: dict[str | None, list[dict[str, Any]]] = {}
+
+    def add_stop(zone_id: Any, stop_obj: dict[str, Any]) -> None:
+        key = None if zone_id is None else str(zone_id)
+        grouped.setdefault(key, []).append(stop_obj)
+
+    if isinstance(all_stops, dict):
+        features = all_stops.get("features")
+        if isinstance(features, list):
+            for feature in features:
+                if not isinstance(feature, dict):
+                    continue
+                properties = feature.get("properties", {})
+                zone_id = properties.get("zone_id") if isinstance(properties, dict) else None
+                add_stop(zone_id, feature)
+
+        for key in ("stops", "data"):
+            stop_list = all_stops.get(key)
+            if isinstance(stop_list, list):
+                for stop in stop_list:
+                    if not isinstance(stop, dict):
+                        continue
+                    add_stop(stop.get("zone_id"), stop)
+
+    if isinstance(all_stops, list):
+        for stop in all_stops:
+            if not isinstance(stop, dict):
+                continue
+            properties = stop.get("properties", {})
+            if isinstance(properties, dict) and "zone_id" in properties:
+                add_stop(properties.get("zone_id"), stop)
+            else:
+                add_stop(stop.get("zone_id"), stop)
+
+    return grouped
 
 
 
@@ -334,15 +479,40 @@ def main() -> int:
     #     return 1
     
 
-    # update_all_stops_cache(api_key)    
+    # update_all_stops_cache(api_key, fetch_all_stops)
     all_stops = get_all_stops_cache()
+    all_routes = get_all_routes_cache()
 
-    plot_stops_coordinates(all_stops)
+    grouped_stops = group_stops_by_zone_id(all_stops)
+    print(f"Total stops: {len(all_stops.get('features', [])) if isinstance(all_stops, dict) else len(all_stops)}")
+    print(f"Unique zone_ids: {len(grouped_stops)}")
+    for zone_name in grouped_stops:
+        print(f"Zone {zone_name}: {len(grouped_stops[zone_name])} stops")
 
+
+    print(type(all_routes))
+    print(all_routes[0:5])
+
+    # plot_routes_coordinates(all_routes)
 
     # fetch_all_routes
-    update_all_routes_cache(api_key)
+    # update_all_routes_cache(api_key, fetch_all_routes)
     # get_all_routes_cache
+
+    # print(group_stops_by_zone_id(all_stops).keys())
+
+    # print(group_stops_by_zone_id(all_stops)['P'])
+
+    print(type(all_stops))
+    print(all_stops.keys())
+    print(type(grouped_stops['P']))
+    prague_zone_code = 'P'
+    plot_stops_coordinates({'features': grouped_stops[prague_zone_code], 'type': 'FeatureCollection'}, title=f"Stops in Zone {prague_zone_code}")
+    print()
+    print()
+    print()
+
+    # print(fetch_shape(api_key, "L991V2"))
 
 
 if __name__ == "__main__":
