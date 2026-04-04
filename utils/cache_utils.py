@@ -41,3 +41,15 @@ def update_all_routes_cache(
 
 def get_all_routes_cache(cache_path: str | Path = "all_routes_cache.pkl") -> dict[str, Any]:
     return _read_cache(cache_path, "Run update_all_routes_cache() first.")
+
+
+def update_all_trips_cache(
+    api_key: str,
+    fetch_all_trips: Callable[[str], dict[str, Any]],
+    cache_path: str | Path = "all_trips_cache.pkl",
+) -> None:
+    _write_cache(fetch_all_trips(api_key), cache_path)
+
+
+def get_all_trips_cache(cache_path: str | Path = "all_trips_cache.pkl") -> dict[str, Any]:
+    return _read_cache(cache_path, "Run update_all_trips_cache() first.")

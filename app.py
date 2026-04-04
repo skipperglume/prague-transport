@@ -6,12 +6,23 @@ import sys
 from pathlib import Path
 from typing import Any
 
-import requests
-from cache_utils import (
+from utils.cache_utils import (
     get_all_routes_cache,
     get_all_stops_cache,
+    get_all_trips_cache,
     update_all_routes_cache,
     update_all_stops_cache,
+    update_all_trips_cache,
+)
+
+from utils.fetch_utils import (
+    fetch_all_routes,
+    fetch_all_stops,
+    fetch_all_trips,
+    load_api_key,
+    fetch_departures,
+    fetch_shape,
+    
 )
 
 try:
@@ -22,32 +33,7 @@ except ImportError as exc:
     ) from exc
 
 
-API_BASE_URL = "https://api.golemio.cz"
-DEPARTURE_BOARDS_PATH = "/v2/pid/departureboards"
 
-STOPS = "/v2/gtfs/stops"
-ROUTES = "/v2/gtfs/routes"
-SHAPES = "/v2/gtfs/shapes/{id}"
-
-
-
-def load_api_key() -> str:
-    '''
-    Load API key from environment variable or secrets.txt file.
-    '''
-    env_key = os.getenv("GOLEMIO_API_KEY", "").strip()
-    if env_key:
-        return env_key
-
-    secrets_path = Path("secrets.txt")
-    if secrets_path.exists():
-        token = secrets_path.read_text(encoding="utf-8").strip()
-        if token:
-            return token
-
-    raise RuntimeError(
-        "Missing API key. Set GOLEMIO_API_KEY or add token to secrets.txt"
-    )
 
 
 def load_config(path: Path) -> dict[str, Any]:
@@ -92,73 +78,7 @@ def build_params(config: dict[str, Any], override_stops: list[str] | None) -> li
     return params
 
 
-def fetch_departures(api_key: str, params: list[tuple[str, str]]) -> dict[str, Any]:
-    url = f"{API_BASE_URL}{DEPARTURE_BOARDS_PATH}"
-    headers = {
-        "X-Access-Token": api_key,
-        "Accept": "application/json",
-    }
-    print(url)
-    print(headers)
-    print(params)
-    response = requests.get(url, headers=headers, params=params, timeout=20)
-    if response.status_code == 401:
-        raise RuntimeError("Unauthorized: API key is missing or invalid")
-    if response.status_code == 404:
-        raise RuntimeError(
-            "API returned 404 (no matching stops found). "
-            "Use exact stop names including diacritics, or adjust --stops/config stop_names."
-        )
-    if response.status_code >= 400:
-        raise RuntimeError(f"API error {response.status_code}: {response.text}")
-    return response.json()
 
-
-def fetch_all_stops(api_key: str) -> dict[str, Any]:
-    url = f"{API_BASE_URL}{STOPS}"
-    headers = {
-        "X-Access-Token": api_key,
-        "Accept": "application/json",
-    }
-    response = requests.get(url, headers=headers, timeout=20)
-    if response.status_code == 401:
-        raise RuntimeError("Unauthorized: API key is missing or invalid")
-    if response.status_code >= 400:
-        raise RuntimeError(f"API error {response.status_code}: {response.text}")
-    return response.json()
-
-
-def fetch_all_routes(api_key: str) -> dict[str, Any]:
-    url = f"{API_BASE_URL}{ROUTES}"
-    headers = {
-        "X-Access-Token": api_key,
-        "Accept": "application/json",
-    }
-    response = requests.get(url, headers=headers, timeout=20)
-    if response.status_code == 401:
-        raise RuntimeError("Unauthorized: API key is missing or invalid")
-    if response.status_code >= 400:
-        raise RuntimeError(f"API error {response.status_code}: {response.text}")
-    return response.json()
-
-
-def fetch_shape(api_key: str, shape_id: str) -> dict[str, Any]:
-    if not str(shape_id).strip():
-        raise ValueError("shape_id must be provided")
-
-    url = f"{API_BASE_URL}{SHAPES.format(id=shape_id)}"
-    headers = {
-        "X-Access-Token": api_key,
-        "Accept": "application/json",
-    }
-    response = requests.get(url, headers=headers, timeout=20)
-    if response.status_code == 401:
-        raise RuntimeError("Unauthorized: API key is missing or invalid")
-    if response.status_code == 404:
-        raise RuntimeError(f"Shape not found for id: {shape_id}")
-    if response.status_code >= 400:
-        raise RuntimeError(f"API error {response.status_code}: {response.text}")
-    return response.json()
 
 
 def _extract_stop_points(all_stops: dict[str, Any] | list[dict[str, Any]]) -> list[tuple[float, float]]:
@@ -479,7 +399,7 @@ def main() -> int:
     #     return 1
     
 
-    # update_all_stops_cache(api_key, fetch_all_stops)
+    
     all_stops = get_all_stops_cache()
     all_routes = get_all_routes_cache()
 
@@ -496,7 +416,6 @@ def main() -> int:
     # plot_routes_coordinates(all_routes)
 
     # fetch_all_routes
-    # update_all_routes_cache(api_key, fetch_all_routes)
     # get_all_routes_cache
 
     # print(group_stops_by_zone_id(all_stops).keys())
@@ -511,6 +430,13 @@ def main() -> int:
     print()
     print()
     print()
+
+
+    # all_trips = fetch_all_trips(api_key)
+    
+    all_trips = get_all_trips_cache()
+    print(type(all_trips))
+    print(all_trips[0])
 
     # print(fetch_shape(api_key, "L991V2"))
 
