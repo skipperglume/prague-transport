@@ -2,9 +2,16 @@
 import argparse
 import json
 import os
-import sys
+import re
 from pathlib import Path
 from typing import Any
+
+try:
+    import matplotlib.pyplot as plt
+except ImportError as exc:
+    raise RuntimeError(
+        "matplotlib is required for plotting. Install it with: pip install matplotlib"
+    ) from exc
 
 from utils.cache_utils import (
     get_all_routes_cache,
@@ -13,6 +20,7 @@ from utils.cache_utils import (
     update_all_routes_cache,
     update_all_stops_cache,
     update_all_trips_cache,
+    load_prague_districts_info,
 )
 
 from utils.fetch_utils import (
@@ -24,15 +32,23 @@ from utils.fetch_utils import (
     fetch_shape,
     
 )
+from utils.districts_utils import (
+    filter_districts_by_name,
+)
+from utils.stop_trips_sorting_utils import (
+    filter_stops_by_name_regex,
+    find_routes_trips_through_stops,
+)
 
-try:
-    import matplotlib.pyplot as plt
-except ImportError as exc:
-    raise RuntimeError(
-        "matplotlib is required for plotting. Install it with: pip install matplotlib"
-    ) from exc
+from utils.plot_districts import (
+    draw_districts_on_figure,
+)
 
 
+from utils.plot_stops import (
+    plot_stops_coordinates,
+    plot_stops_on_figure,
+)
 
 
 
@@ -80,173 +96,6 @@ def build_params(config: dict[str, Any], override_stops: list[str] | None) -> li
 
 
 
-
-def _extract_stop_points(all_stops: dict[str, Any] | list[dict[str, Any]]) -> list[tuple[float, float]]:
-    points: list[tuple[float, float]] = []
-
-    def add_point(lon_raw: Any, lat_raw: Any) -> None:
-        try:
-            lon = float(lon_raw)
-            lat = float(lat_raw)
-        except (TypeError, ValueError):
-            return
-        points.append((lon, lat))
-
-    if isinstance(all_stops, dict):
-        features = all_stops.get("features")
-        if isinstance(features, list):
-            for feature in features:
-                if not isinstance(feature, dict):
-                    continue
-                geometry = feature.get("geometry", {})
-                coordinates = geometry.get("coordinates") if isinstance(geometry, dict) else None
-                if isinstance(coordinates, (list, tuple)) and len(coordinates) >= 2:
-                    add_point(coordinates[0], coordinates[1])
-
-        for key in ("stops", "data"):
-            stop_list = all_stops.get(key)
-            if isinstance(stop_list, list):
-                for stop in stop_list:
-                    if not isinstance(stop, dict):
-                        continue
-                    add_point(stop.get("lon"), stop.get("lat"))
-                    add_point(stop.get("longitude"), stop.get("latitude"))
-
-    if isinstance(all_stops, list):
-        for stop in all_stops:
-            if not isinstance(stop, dict):
-                continue
-            add_point(stop.get("lon"), stop.get("lat"))
-            add_point(stop.get("longitude"), stop.get("latitude"))
-
-    return list(dict.fromkeys(points))
-
-
-def _extract_route_lines(routes: dict[str, Any] | list[dict[str, Any]]) -> list[list[tuple[float, float]]]:
-    lines: list[list[tuple[float, float]]] = []
-
-    def as_point(value: Any) -> tuple[float, float] | None:
-        if not isinstance(value, (list, tuple)) or len(value) < 2:
-            return None
-        try:
-            lon = float(value[0])
-            lat = float(value[1])
-        except (TypeError, ValueError):
-            return None
-        return (lon, lat)
-
-    def add_line(coords: Any) -> None:
-        if not isinstance(coords, list):
-            return
-        line: list[tuple[float, float]] = []
-        for candidate in coords:
-            point = as_point(candidate)
-            if point is not None:
-                line.append(point)
-        if len(line) >= 2:
-            lines.append(line)
-
-    def process_geometry(geometry: Any) -> None:
-        if not isinstance(geometry, dict):
-            return
-        geometry_type = str(geometry.get("type", ""))
-        coords = geometry.get("coordinates")
-        if geometry_type == "LineString":
-            add_line(coords)
-        elif geometry_type == "MultiLineString" and isinstance(coords, list):
-            for segment in coords:
-                add_line(segment)
-
-    if isinstance(routes, dict):
-        features = routes.get("features")
-        if isinstance(features, list):
-            for feature in features:
-                if not isinstance(feature, dict):
-                    continue
-                process_geometry(feature.get("geometry"))
-
-        for key in ("routes", "data"):
-            route_list = routes.get(key)
-            if isinstance(route_list, list):
-                for route in route_list:
-                    if not isinstance(route, dict):
-                        continue
-                    process_geometry(route.get("geometry"))
-
-    if isinstance(routes, list):
-        for route in routes:
-            if not isinstance(route, dict):
-                continue
-            process_geometry(route.get("geometry"))
-
-    return lines
-
-
-def plot_stops_on_figure(
-    figure: Any,
-    all_stops: dict[str, Any] | list[dict[str, Any]],
-    *,
-    point_size: float = 4,
-    alpha: float = 0.7,
-    color: str = "tab:blue",
-    title: str = "Golemio Stops Coordinates",
-) -> Any:
-    points = _extract_stop_points(all_stops)
-    if not points:
-        raise RuntimeError("No stop coordinates found in all_stops payload")
-
-    ax = figure.gca()
-    longitudes = [p[0] for p in points]
-    latitudes = [p[1] for p in points]
-    ax.scatter(longitudes, latitudes, s=point_size, alpha=alpha, color=color, label="Stops")
-    ax.set_xlabel("Longitude")
-    ax.set_ylabel("Latitude")
-    ax.set_title(title)
-    ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.6)
-    return ax
-
-
-def plot_routes_on_figure(
-    figure: Any,
-    routes: dict[str, Any] | list[dict[str, Any]],
-    *,
-    line_width: float = 0.9,
-    alpha: float = 0.6,
-    color: str = "tab:red",
-) -> Any:
-    lines = _extract_route_lines(routes)
-    if not lines:
-        raise RuntimeError("No route geometries found in routes payload")
-
-    ax = figure.gca()
-    for line in lines:
-        xs = [p[0] for p in line]
-        ys = [p[1] for p in line]
-        ax.plot(xs, ys, linewidth=line_width, alpha=alpha, color=color)
-
-    ax.set_xlabel("Longitude")
-    ax.set_ylabel("Latitude")
-    ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.6)
-    return ax
-
-
-def plot_stops_coordinates(all_stops: dict[str, Any] | list[dict[str, Any]], title:str, out_dir:str='images' ) -> None:
-    fig = plt.figure(figsize=(10, 8))
-    ax = plot_stops_on_figure(fig, all_stops, title=title)
-    ax.set_title(title)
-    plt.tight_layout()
-    output_path = os.path.join(out_dir, f"{title.lower().replace(' ', '_')}_coordinates.png")
-    plt.savefig(output_path, dpi=300)
-
-
-def plot_routes_coordinates(routes: dict[str, Any] | list[dict[str, Any]]) -> None:
-    fig = plt.figure(figsize=(10, 8))
-    ax = plot_routes_on_figure(fig, routes)
-    ax.set_title("Golemio Routes")
-    plt.tight_layout()
-    plt.savefig("images/routes_coordinates.png", dpi=300)
-
-
 def group_stops_by_zone_id(
     all_stops: dict[str, Any] | list[dict[str, Any]],
 ) -> dict[str | None, list[dict[str, Any]]]:
@@ -285,6 +134,7 @@ def group_stops_by_zone_id(
                 add_stop(stop.get("zone_id"), stop)
 
     return grouped
+
 
 
 
@@ -356,6 +206,7 @@ def print_table(rows: list[dict[str, str]]) -> None:
 
 
 
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="List chosen tram departures from Golemio PID API")
     parser.add_argument(
@@ -402,6 +253,9 @@ def main() -> int:
     
     all_stops = get_all_stops_cache()
     all_routes = get_all_routes_cache()
+    all_trips = get_all_trips_cache()
+
+    prague_districts = load_prague_districts_info()
 
     grouped_stops = group_stops_by_zone_id(all_stops)
     print(f"Total stops: {len(all_stops.get('features', [])) if isinstance(all_stops, dict) else len(all_stops)}")
@@ -428,18 +282,70 @@ def main() -> int:
     prague_zone_code = 'P'
     plot_stops_coordinates({'features': grouped_stops[prague_zone_code], 'type': 'FeatureCollection'}, title=f"Stops in Zone {prague_zone_code}")
     print()
-    print()
+    print(grouped_stops[prague_zone_code][0:5])
     print()
 
 
-    # all_trips = fetch_all_trips(api_key)
     
-    all_trips = get_all_trips_cache()
-    print(type(all_trips))
+    
+    print(all_stops['features'][0])
+    print(all_routes[0])
     print(all_trips[0])
+
+    print('prague_districts')
+    print(prague_districts.keys())
+    print(prague_districts['feature_count'])
+    print(prague_districts['district_names'])
+    print(prague_districts['district_count'])
+    print(prague_districts['geojson'].keys())
+
+    print(type(prague_districts['geojson']['type']))
+    print(prague_districts['geojson']['type'])
+    print(type(prague_districts['geojson']['crs']))
+    print(prague_districts['geojson']['crs'].keys())
+    print(type(prague_districts['geojson']['features']))
+    print(type(prague_districts['geojson']['features'][0]))
+    print(prague_districts['geojson']['features'][0].keys())
+    print(prague_districts['geojson']['features'][0]['properties'])
+
+
+    for district in prague_districts['geojson']['features']:
+        print(f"[{district['properties']['NAZEV_1']}], [{district['properties']['NAZEV_MC']}]")
+
+
+    filtered = filter_districts_by_name(prague_districts, "Praha .*")
+    print(type(filtered))
+    print(len(filtered))
+
+    # dict_keys(['', '', ''])
+
+    # print(prague_districts['Praha 1'])
 
     # print(fetch_shape(api_key, "L991V2"))
 
+    # find_routes_trips_through_stops(all_stops, all_trips, all_routes)
+
+    figure_prague = plt.figure(figsize=(40, 40))
+
+    draw_districts_on_figure(
+        figure_prague,
+        filtered,
+        line_width=0.8,
+        line_alpha=0.7,
+    )
+
+
+    plot_stops_on_figure(
+        figure_prague,
+        {'features': grouped_stops[prague_zone_code], 'type': 'FeatureCollection'},
+        point_size=10,
+        alpha=0.9,
+        color="tab:blue",
+        title=f"Prague Districts and Stops in Zone {prague_zone_code}",
+    )
+
+    figure_prague.tight_layout()
+    figure_prague.savefig("images/prague_districts.png", dpi=300)
 
 if __name__ == "__main__":
     raise SystemExit(main())

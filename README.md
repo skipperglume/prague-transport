@@ -61,3 +61,35 @@ To get vichicle positions:
 https://api.golemio.cz/v2/vehiclepositions/gtfsrt/vehicle_positions.pb
 ```
 
+
+
+
+## Getting geojson about prague administrative and municipal districts
+```bash
+curl "https://services1.arcgis.com/LPm07959azIAvFRD/ArcGIS/rest/services/MAP_CUR_MAP_MESTSKECASTI_P/FeatureServer/0/query?where=1%3D1&outFields=*&outSR=4326&f=geojson" -o prague_districts.geojson
+```
+
+
+
+[Praha 10], [Praha 10]
+[Praha 5], [Praha 5]
+[Praha 2], [Praha 2]
+[Praha 8], [Praha 8]
+[Praha 15], [Praha 15]
+[Praha 4], [Praha 4]
+[Praha 22], [Praha 22]
+[Praha 17], [Praha 17]
+[Praha 1], [Praha 1]
+[Praha 14], [Praha 14]
+[Praha 3], [Praha 3]
+[Praha 7], [Praha 7]
+[Praha 9], [Praha 9]
+[Praha 20], [Praha 20]
+[Praha 19], [Praha 19]
+[Praha 6], [Praha 6]
+[Praha 18], [Praha 18]
+[Praha 21], [Praha 21]
+[Praha 13], [Praha 13]
+[Praha 12], [Praha 12]
+[Praha 11], [Praha 11]
+[Praha 16], [Praha 16]
