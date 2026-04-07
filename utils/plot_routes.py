@@ -1,6 +1,8 @@
 from typing import Any
 import matplotlib.pyplot as plt
 
+from utils.plot_handler import FigureContent
+
 def _extract_route_lines(routes: dict[str, Any] | list[dict[str, Any]]) -> list[list[tuple[float, float]]]:
     lines: list[list[tuple[float, float]]] = []
 
@@ -70,7 +72,7 @@ def plot_routes_coordinates(routes: dict[str, Any] | list[dict[str, Any]]) -> No
 
 
 def plot_routes_on_figure(
-    figure: Any,
+    figure: FigureContent | Any,
     routes: dict[str, Any] | list[dict[str, Any]],
     *,
     line_width: float = 0.9,
@@ -81,7 +83,9 @@ def plot_routes_on_figure(
     if not lines:
         raise RuntimeError("No route geometries found in routes payload")
 
-    ax = figure.gca()
+    figure_content = figure if isinstance(figure, FigureContent) else None
+    matplotlib_figure = figure_content.figure if figure_content is not None else figure
+    ax = matplotlib_figure.gca()
     for line in lines:
         xs = [p[0] for p in line]
         ys = [p[1] for p in line]
@@ -90,4 +94,6 @@ def plot_routes_on_figure(
     ax.set_xlabel("Longitude")
     ax.set_ylabel("Latitude")
     ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.6)
+    if figure_content is not None:
+        figure_content.add_routes(lines)
     return ax

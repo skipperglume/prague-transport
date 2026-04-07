@@ -21,6 +21,7 @@ from utils.cache_utils import (
     update_all_stops_cache,
     update_all_trips_cache,
     load_prague_districts_info,
+    load_prague_parks_info,
 )
 
 from utils.fetch_utils import (
@@ -41,7 +42,7 @@ from utils.stop_trips_sorting_utils import (
 )
 
 from utils.plot_districts import (
-    draw_districts_on_figure,
+    plot_districts_on_figure,
 )
 
 
@@ -50,7 +51,26 @@ from utils.plot_stops import (
     plot_stops_on_figure,
 )
 
+from utils.plot_districts import (
+    FigureContent,
+)
 
+
+from utils.plot_routes import (
+    plot_routes_on_figure,
+)
+
+
+
+from utils.routes_utils import (
+    routes_example,
+    filter_routes_by_name,
+    filter_trips_by_route_id,
+)
+
+from utils.plot_shape import (
+    plot_shape_on_figure,
+)
 
 def load_config(path: Path) -> dict[str, Any]:
     if not path.exists():
@@ -207,6 +227,8 @@ def print_table(rows: list[dict[str, str]]) -> None:
 
 
 
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="List chosen tram departures from Golemio PID API")
     parser.add_argument(
@@ -264,49 +286,14 @@ def main() -> int:
         print(f"Zone {zone_name}: {len(grouped_stops[zone_name])} stops")
 
 
-    print(type(all_routes))
-    print(all_routes[0:5])
 
-    # plot_routes_coordinates(all_routes)
 
-    # fetch_all_routes
-    # get_all_routes_cache
-
-    # print(group_stops_by_zone_id(all_stops).keys())
-
-    # print(group_stops_by_zone_id(all_stops)['P'])
-
-    print(type(all_stops))
-    print(all_stops.keys())
-    print(type(grouped_stops['P']))
     prague_zone_code = 'P'
-    plot_stops_coordinates({'features': grouped_stops[prague_zone_code], 'type': 'FeatureCollection'}, title=f"Stops in Zone {prague_zone_code}")
-    print()
-    print(grouped_stops[prague_zone_code][0:5])
-    print()
 
 
     
     
-    print(all_stops['features'][0])
-    print(all_routes[0])
-    print(all_trips[0])
 
-    print('prague_districts')
-    print(prague_districts.keys())
-    print(prague_districts['feature_count'])
-    print(prague_districts['district_names'])
-    print(prague_districts['district_count'])
-    print(prague_districts['geojson'].keys())
-
-    print(type(prague_districts['geojson']['type']))
-    print(prague_districts['geojson']['type'])
-    print(type(prague_districts['geojson']['crs']))
-    print(prague_districts['geojson']['crs'].keys())
-    print(type(prague_districts['geojson']['features']))
-    print(type(prague_districts['geojson']['features'][0]))
-    print(prague_districts['geojson']['features'][0].keys())
-    print(prague_districts['geojson']['features'][0]['properties'])
 
 
     for district in prague_districts['geojson']['features']:
@@ -314,38 +301,189 @@ def main() -> int:
 
 
     filtered = filter_districts_by_name(prague_districts, "Praha .*")
-    print(type(filtered))
-    print(len(filtered))
 
-    # dict_keys(['', '', ''])
-
-    # print(prague_districts['Praha 1'])
-
-    # print(fetch_shape(api_key, "L991V2"))
-
-    # find_routes_trips_through_stops(all_stops, all_trips, all_routes)
 
     figure_prague = plt.figure(figsize=(40, 40))
+    fc_prague = FigureContent('Prague', figure_prague)
 
-    draw_districts_on_figure(
-        figure_prague,
+    print('before plotting districts')
+    plot_districts_on_figure(
+        fc_prague,
         filtered,
         line_width=0.8,
         line_alpha=0.7,
     )
 
+    print('before plotting stops')
 
     plot_stops_on_figure(
-        figure_prague,
+        fc_prague,
         {'features': grouped_stops[prague_zone_code], 'type': 'FeatureCollection'},
         point_size=10,
         alpha=0.9,
         color="tab:blue",
-        title=f"Prague Districts and Stops in Zone {prague_zone_code}",
+        plot_names = True,
     )
 
-    figure_prague.tight_layout()
-    figure_prague.savefig("images/prague_districts.png", dpi=300)
+
+
+    fc_prague.save_figure("images/prague_districts_and_stops.png")
+
+    print(fc_prague.plotted_stop_names)
+
+
+    routes_example(all_routes)
+
+def example_shape(shape):
+    print(f'Shape type: {type(shape)}')
+    print(f'Shape keys: {shape.keys()}')
+    print(shape['type'])
+    print(type(shape['features']))
+    print(len(shape['features']))
+    print(shape['features'][0])
+
+    print(f"Shape feature 1 : [{shape['features'][1]}]")
+
+    {
+        'geometry': {'coordinates': [14.431263, 50.104145], 'type': 'Point'}, 
+        'properties': {'shape_dist_traveled': 0.0017, 'shape_id': 'L25V21', 'shape_pt_sequence': 2}, 
+        'type': 'Feature'
+    }
+
+
+def example_parcs(parcs):
+    return 
+
+
+def test_routes_example():
+
+
+
+
+
+
+    
+
+
+    figure_prague = plt.figure(figsize=(40, 40))
+    fc_prague = FigureContent('Prague', figure_prague)
+
+   
+
+    api_key = load_api_key()
+    prague_districts = load_prague_districts_info()
+    all_routes = get_all_routes_cache()
+    all_trips = get_all_trips_cache()
+    all_stops = get_all_stops_cache()
+    all_parcs = load_prague_parks_info()
+
+    # example_parcs
+
+    return 
+
+    routes_example(all_routes, all_trips)
+
+    test_figure = plt.figure(figsize=(10, 10))
+    test_fc  = FigureContent('Test', test_figure)
+
+
+    grouped_stops = group_stops_by_zone_id(all_stops)
+    filtered_districts = filter_districts_by_name(prague_districts, "Praha .*")
+    plot_districts_on_figure(
+        test_fc,
+        filtered_districts,
+        line_width=0.8,
+        line_alpha=0.7,
+    )
+    prague_zone_code = 'P'
+
+
+    # plot_stops_on_figure(
+    #     test_fc,
+    #     {'features': grouped_stops[prague_zone_code], 'type': 'FeatureCollection'},
+    #     point_size=10,
+    #     alpha=0.9,
+    #     color="tab:blue",
+    #     plot_names = False,
+    # )
+
+    filtered_routes = filter_routes_by_name(all_routes, 'Výstaviště')
+    total_shapes = []
+    total_trips = []
+    print(f'Found [{len(filtered_routes)}] routes matching "Výstaviště" in their long name')
+    for route in filtered_routes:
+        print('route_long_name')
+        print(route['route_long_name'])
+        print(route['route_short_name'])
+        print(route['route_id'])
+
+        plot_routes_on_figure(
+            test_fc,
+            {'features': [route], 'type': 'FeatureCollection'},
+            line_width=2.5,
+            alpha=0.9,
+            color="tab:red",
+        )
+
+        filtered_stops = filter_stops_by_name_regex(all_stops, route['route_long_name'].split(' - '))
+
+
+        plot_stops_on_figure(
+            test_fc,
+            {'features': filtered_stops, 'type': 'FeatureCollection'},
+            point_size=10,
+            alpha=0.9,
+            color="tab:blue",
+            plot_names = True,
+        )
+
+        print([_['route_long_name'] for _ in filtered_routes])
+
+        print(route['route_long_name'].split(' - ')[0])
+
+        print(len(all_stops))
+        print('filtered_stops')
+        print(len(filtered_stops))
+
+        # print(filtered_stops[0])
+        # print(filtered_stops[1])
+
+        filtered_trips = filter_trips_by_route_id(all_trips, route['route_id'])
+        print(f'Found [{len(filtered_trips)}] trips for route {route["route_long_name"]}')
+
+        trips_cut_off = 10000
+
+
+        if len(filtered_trips) >= trips_cut_off:
+            filtered_trips = filtered_trips[:trips_cut_off]
+        
+
+        for trip in filtered_trips:
+            shape = fetch_shape(api_key, trip['shape_id'])
+            # example_shape(shape)
+            plot_shape_on_figure(
+                test_fc,
+                shape,
+                line_width=1.5,
+                alpha=0.8,
+                color="tab:orange",
+                label=route['route_short_name'],
+            )
+            # print(shape)
+            # total_shapes.append(shape['features'][0]['properties']['shape_id'])
+
+        # total_trips.extend([_['trip_headsign'] for _ in filtered_trips])
+
+        print(filtered_trips[0])
+
+    test_fc.save_figure("images/test_routes_shapes.png")
+    # print(total_shapes)
+    # print(total_trips)
+
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    # main()
+
+
+
+    test_routes_example()

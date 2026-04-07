@@ -2,6 +2,8 @@ from typing import Any
 import matplotlib.pyplot as plt
 import os
 
+from utils.plot_handler import FigureContent
+
 def _extract_stop_points(all_stops: dict[str, Any] | list[dict[str, Any]]) -> list[tuple[float, float, str]]:
     points: list[tuple[float, float, str]] = []
 
@@ -74,30 +76,55 @@ def _extract_stop_points(all_stops: dict[str, Any] | list[dict[str, Any]]) -> li
 
 
 def plot_stops_on_figure(
-    figure: Any,
+    figure: FigureContent | Any,
     all_stops: dict[str, Any] | list[dict[str, Any]],
     *,
     point_size: float = 4,
     alpha: float = 0.7,
     color: str = "tab:blue",
-    title: str = "Golemio Stops Coordinates",
     plot_names: bool = True,
 ) -> Any:
+    
+    method_name = "plot_stops_on_figure"
+
     points = _extract_stop_points(all_stops)
     if not points:
         raise RuntimeError("No stop coordinates found in all_stops payload")
 
-    ax = figure.gca()
+    figure_content = figure if isinstance(figure, FigureContent) else None
+    matplotlib_figure = figure_content.figure if figure_content is not None else figure
+    ax = matplotlib_figure.gca()
     longitudes = [p[0] for p in points]
     latitudes = [p[1] for p in points]
+    
+    print(f'{method_name}: plotting {len(points)} stops')
+
     ax.scatter(longitudes, latitudes, s=point_size, alpha=alpha, color=color, label="Stops")
     ax.set_xlabel("Longitude")
     ax.set_ylabel("Latitude")
-    ax.set_title(title)
     ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.6)
+    
+    print(f'{method_name}: Stop name plotting:  [{plot_names}]')
+    # Plot stop names if enabled, avoiding duplicates
     if plot_names:
-        for point in points:
-            ax.text(point[0], point[1], point[2], fontsize=8, ha="right", va="bottom")
+        if figure_content is not None:
+            for point in points:
+                if figure_content.stop_name_is_plotted(point[2]):
+                    continue
+                ax.text(point[0], point[1], point[2], fontsize=8, ha="right", va="bottom")
+                figure_content.add_plotted_stop_name(point[2])
+        else:
+            draw_names = set()
+            for point in points:
+                if point[2] in draw_names:
+                    continue
+                ax.text(point[0], point[1], point[2], fontsize=8, ha="right", va="bottom")
+                draw_names.add(point[2])
+
+
+
+    if figure_content is not None:
+        figure_content.add_stops(points)
     return ax
 
 
