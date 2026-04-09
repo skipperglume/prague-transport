@@ -43,6 +43,7 @@ from utils.stop_trips_sorting_utils import (
 
 from utils.plot_districts import (
     plot_districts_on_figure,
+    plot_parks_on_figure,
 )
 
 
@@ -352,6 +353,14 @@ def example_shape(shape):
 
 
 def example_parcs(parcs):
+    print(f'Parks type: {type(parcs)}')
+    print(f'Parks keys: {parcs.keys()}')
+    print(f'Parks geojson type: {type(parcs["geojson"])}')
+    print(f'Parks geojson keys: {parcs["geojson"].keys()}')
+    print(parcs["geojson"]['type'])
+    print(type(parcs["geojson"]['features']))
+    print(len(parcs["geojson"]['features']))
+    print(parcs["geojson"]['features'][0])
     return 
 
 
@@ -375,11 +384,10 @@ def test_routes_example():
     all_routes = get_all_routes_cache()
     all_trips = get_all_trips_cache()
     all_stops = get_all_stops_cache()
-    all_parcs = load_prague_parks_info()
+    all_parcs = load_prague_parks_info()["geojson"]['features']
 
-    # example_parcs
+    # example_parcs(all_parcs)
 
-    return 
 
     routes_example(all_routes, all_trips)
 
@@ -393,9 +401,21 @@ def test_routes_example():
         test_fc,
         filtered_districts,
         line_width=0.8,
-        line_alpha=0.7,
+        line_alpha=1.0,
+        fill_alpha=1.0,
     )
     prague_zone_code = 'P'
+
+    plot_parks_on_figure(
+        test_fc,
+        all_parcs,
+        line_width=0.8,
+        line_alpha=1.0,
+        line_color="tab:green",
+        fill_color="tab:green",
+        fill_alpha=1.0,
+        title="Prague Parks",
+    )
 
 
     # plot_stops_on_figure(
@@ -407,26 +427,34 @@ def test_routes_example():
     #     plot_names = False,
     # )
 
-    filtered_routes = filter_routes_by_name(all_routes, 'Výstaviště')
+    filtered_routes = []
+    for pattern in ["Výstaviště", "Holešovice", "Vyšehrad"]:
+        temp_filtered_routes = filter_routes_by_name(all_routes, pattern)
+        filtered_routes.extend(temp_filtered_routes)
+
     total_shapes = []
     total_trips = []
     print(f'Found [{len(filtered_routes)}] routes matching "Výstaviště" in their long name')
     for route in filtered_routes:
-        print('route_long_name')
-        print(route['route_long_name'])
-        print(route['route_short_name'])
-        print(route['route_id'])
+        route_long_name = route['route_long_name']
+        route_short_name = route['route_short_name']
+        route_id = route['route_id']
+        print(f'Processing route: {route_long_name} (short name: {route_short_name}, id: {route_id})')
+        
 
-        plot_routes_on_figure(
-            test_fc,
-            {'features': [route], 'type': 'FeatureCollection'},
-            line_width=2.5,
-            alpha=0.9,
-            color="tab:red",
-        )
+        # plot_routes_on_figure(
+        #     test_fc,
+        #     {'features': [route], 'type': 'FeatureCollection'},
+        #     line_width=2.5,
+        #     alpha=0.9,
+        #     color="tab:red",
+        # )
 
         filtered_stops = filter_stops_by_name_regex(all_stops, route['route_long_name'].split(' - '))
-
+        if len(filtered_stops) == 0 :
+            print(f'No stops found matching route long name pattern for route {route_long_name}')
+            continue
+        # print(filtered_stops)
 
         plot_stops_on_figure(
             test_fc,
@@ -437,44 +465,44 @@ def test_routes_example():
             plot_names = True,
         )
 
-        print([_['route_long_name'] for _ in filtered_routes])
+    #     print([_['route_long_name'] for _ in filtered_routes])
 
-        print(route['route_long_name'].split(' - ')[0])
+    #     print(route['route_long_name'].split(' - ')[0])
 
-        print(len(all_stops))
-        print('filtered_stops')
-        print(len(filtered_stops))
+    #     print(len(all_stops))
+    #     print('filtered_stops')
+    #     print(len(filtered_stops))
 
-        # print(filtered_stops[0])
-        # print(filtered_stops[1])
+    #     # print(filtered_stops[0])
+    #     # print(filtered_stops[1])
 
-        filtered_trips = filter_trips_by_route_id(all_trips, route['route_id'])
-        print(f'Found [{len(filtered_trips)}] trips for route {route["route_long_name"]}')
+    #     filtered_trips = filter_trips_by_route_id(all_trips, route['route_id'])
+    #     print(f'Found [{len(filtered_trips)}] trips for route {route["route_long_name"]}')
 
-        trips_cut_off = 10000
+    #     trips_cut_off = 10000
 
 
-        if len(filtered_trips) >= trips_cut_off:
-            filtered_trips = filtered_trips[:trips_cut_off]
+    #     if len(filtered_trips) >= trips_cut_off:
+    #         filtered_trips = filtered_trips[:trips_cut_off]
         
 
-        for trip in filtered_trips:
-            shape = fetch_shape(api_key, trip['shape_id'])
-            # example_shape(shape)
-            plot_shape_on_figure(
-                test_fc,
-                shape,
-                line_width=1.5,
-                alpha=0.8,
-                color="tab:orange",
-                label=route['route_short_name'],
-            )
-            # print(shape)
-            # total_shapes.append(shape['features'][0]['properties']['shape_id'])
+    #     for trip in filtered_trips:
+    #         shape = fetch_shape(api_key, trip['shape_id'])
+    #         # example_shape(shape)
+    #         plot_shape_on_figure(
+    #             test_fc,
+    #             shape,
+    #             line_width=1.5,
+    #             alpha=0.8,
+    #             color="tab:orange",
+    #             label=route['route_short_name'],
+    #         )
+    #         # print(shape)
+    #         # total_shapes.append(shape['features'][0]['properties']['shape_id'])
 
-        # total_trips.extend([_['trip_headsign'] for _ in filtered_trips])
+    #     # total_trips.extend([_['trip_headsign'] for _ in filtered_trips])
 
-        print(filtered_trips[0])
+    #     print(filtered_trips[0])
 
     test_fc.save_figure("images/test_routes_shapes.png")
     # print(total_shapes)
