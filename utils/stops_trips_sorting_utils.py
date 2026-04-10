@@ -1,4 +1,126 @@
+"""Utility functions for filtering and sorting stops, trips, and routes."""
+
+import re
 from typing import Any
+
+
+def filter_stops_by_name_regex(
+    stops: dict[str, Any],
+    regex_patterns: list[str],
+) -> list[dict[str, Any]]:
+    """
+    Filter stops by matching their names against regex patterns.
+    
+    Args:
+        stops: Dictionary containing stop information (dict with features/stops/data keys or list)
+        regex_patterns: List of regex pattern strings to match against stop names
+    
+    Returns:
+        List of stop dictionaries whose names match any of the regex patterns
+    """
+    if not regex_patterns:
+        return []
+    
+    # Compile regex patterns for efficiency
+    compiled_patterns = []
+    for pattern in regex_patterns:
+        try:
+            compiled_patterns.append(re.compile(pattern, re.IGNORECASE))
+        except re.error as e:
+            print(f"Warning: Invalid regex pattern '{pattern}': {e}")
+    
+    if not compiled_patterns:
+        return []
+    
+    matching_stops: list[dict[str, Any]] = []
+    
+    # Extract all stops from various formats
+    stops_to_check: list[dict[str, Any]] = []
+    
+    if isinstance(stops, dict):
+        # Handle GeoJSON features format
+        features = stops.get("features", [])
+        if isinstance(features, list):
+            stops_to_check.extend([f for f in features if isinstance(f, dict)])
+        
+        # Handle direct stops/data lists
+        for key in ("stops", "data"):
+            stop_list = stops.get(key, [])
+            if isinstance(stop_list, list):
+                stops_to_check.extend([s for s in stop_list if isinstance(s, dict)])
+    
+    elif isinstance(stops, list):
+        stops_to_check = [s for s in stops if isinstance(s, dict)]
+    
+    # Filter stops by name
+    for stop in stops_to_check:
+        # Extract stop name from various possible fields
+        stop_name = None
+        
+        # Check properties field (GeoJSON)
+        properties = stop.get("properties", {})
+        if isinstance(properties, dict):
+            stop_name = properties.get("stop_name") or properties.get("name")
+        
+        # Direct fields
+        if not stop_name:
+            stop_name = stop.get("stop_name") or stop.get("name")
+        
+        if stop_name:
+            stop_name = str(stop_name)
+            # Check if any pattern matches
+            for pattern in compiled_patterns:
+                if pattern.search(stop_name):
+                    matching_stops.append(stop)
+                    break  # Avoid duplicates
+    
+    return matching_stops
+
+
+
+def group_stops_by_zone_id(
+    all_stops: dict[str, Any] | list[dict[str, Any]],
+) -> dict[str | None, list[dict[str, Any]]]:
+    '''
+    Groups the stops by their zone_id.
+    '''
+    grouped: dict[str | None, list[dict[str, Any]]] = {}
+
+    def add_stop(zone_id: Any, stop_obj: dict[str, Any]) -> None:
+        key = None if zone_id is None else str(zone_id)
+        grouped.setdefault(key, []).append(stop_obj)
+
+    if isinstance(all_stops, dict):
+        features = all_stops.get("features")
+        if isinstance(features, list):
+            for feature in features:
+                if not isinstance(feature, dict):
+                    continue
+                properties = feature.get("properties", {})
+                zone_id = properties.get("zone_id") if isinstance(properties, dict) else None
+                add_stop(zone_id, feature)
+
+        for key in ("stops", "data"):
+            stop_list = all_stops.get(key)
+            if isinstance(stop_list, list):
+                for stop in stop_list:
+                    if not isinstance(stop, dict):
+                        continue
+                    add_stop(stop.get("zone_id"), stop)
+
+    if isinstance(all_stops, list):
+        for stop in all_stops:
+            if not isinstance(stop, dict):
+                continue
+            properties = stop.get("properties", {})
+            if isinstance(properties, dict) and "zone_id" in properties:
+                add_stop(properties.get("zone_id"), stop)
+            else:
+                add_stop(stop.get("zone_id"), stop)
+
+    return grouped
+
+
 
 def find_routes_trips_through_stops(
     stops: dict[str, Any],
@@ -18,6 +140,8 @@ def find_routes_trips_through_stops(
             - 'matching_trips': List of trip objects that visit the given stops
             - 'matching_routes': List of route objects used by matching trips
             - 'stop_ids': Set of stop IDs extracted from the stops parameter
+            - 'trip_count': Number of matching trips
+            - 'route_count': Number of matching routes
     """
     # Extract stop IDs from the stops parameter
     target_stop_ids: set[str] = set()
